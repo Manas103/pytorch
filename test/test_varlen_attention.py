@@ -346,11 +346,21 @@ class TestVarlenAttention(NNTestCase):
 
         torch.library.opcheck(
             torch.ops.torch_attn._varlen_attn,
-            (q, k, v, cu_seq, cu_seq, shape.max_seq_len, shape.max_seq_len, False),
+            (
+                q,
+                k,
+                v,
+                cu_seq,
+                cu_seq,
+                shape.max_seq_len,
+                shape.max_seq_len,
+                None,
+                False,
+            ),
         )
 
         out, lse, rng_state = torch.ops.torch_attn._varlen_attn(
-            q, k, v, cu_seq, cu_seq, shape.max_seq_len, shape.max_seq_len, False
+            q, k, v, cu_seq, cu_seq, shape.max_seq_len, shape.max_seq_len, None, False
         )
         grad_out = torch.randn_like(out)
 
@@ -869,6 +879,28 @@ class TestVarlenAttention(NNTestCase):
 
         self.assertEqual(actual.shape, expected.shape)
         self.assertEqual(actual, expected)
+
+        # using kv cache with pre-allocated output buffer
+        with use_fa3(), torch.no_grad():
+            out_buf = torch.empty_like(q_packed)
+            actual_out = varlen_attn(
+                query=q_packed,
+                key=k_packed,
+                value=v_packed,
+                cu_seq_q=cu_seq_new,
+                cu_seq_k=cu_seq_new,
+                max_q=new_seqlen,
+                max_k=new_seqlen,
+                out=out_buf,
+                k_cache=k_cache,
+                v_cache=v_cache,
+                cache_seqlens=cache_seqlens,
+                cache_batch_idx=cache_batch_idx,
+                page_table=page_table,
+            )
+
+        self.assertEqual(actual_out.data_ptr(), out_buf.data_ptr())
+        self.assertEqual(out_buf, expected)
 
 
 device_types = ("cuda",)
